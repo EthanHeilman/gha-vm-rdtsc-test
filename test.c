@@ -86,6 +86,26 @@ static unsigned long long GetRdSeed()
         __asm__ volatile ("pause");
     } while(true);
     return r1;
+// MSVC support from https://github.com/bitcoin/bitcoin/pull/22158
+#elif defined(_MSC_VER) && defined(_M_X64)
+    uint64_t r1 = 0; // See above why we initialize to 0.
+    do {
+        uint8_t ok = _rdseed64_step(&r1);
+        if (ok) break;
+    } while(true);
+    return r1;
+#elif defined(_MSC_VER) && defined(_M_IX86)
+    uint32_t r1 = 0; // See above why we initialize to 0.
+    uint32_t r2 = 0;
+    for (int i = 0; i < 10; ++i) {
+        uint8_t ok = _rdseed32_step(&r1);
+        if (ok) break;
+    }
+    for (int i = 0; i < 10; ++i) {
+        int ok = _rdseed32_step(&r2);
+        if (ok) break;
+    }
+    return (((uint64_t)r2) << 32) | r1;
 #else
 #error "RdSeed is only supported on x86 and x86_64"
 #endif
@@ -108,24 +128,29 @@ main(void)
         printf("rdtsc average : %.3f\n", (double)d / 1000000.0);
 
         // rdrand
-        for (i = 0; i < 1000; i ++) {
+        int samples = 10;
+        d = 0;
+        for (i = 0; i < samples; i ++) {
                 unsigned long long b, e;
 
                 b = GetRdRand();
+                printf("rdrand: 0x%llx\n", b);
                 e = GetRdRand();
-                d += e - b;
+                d ^= e ^ b;
         }
-        printf("rdrand average : %.3f\n", (double)d / 1000.0);
+        printf("rdrand xor average : %llx \n", d);
 
         // rdseed
-        for (i = 0; i < 1000; i ++) {
+        d = 0;
+        for (i = 0; i < samples; i ++) {
                 unsigned long long b, e;
 
                 b = GetRdSeed();
+                printf("rdseed: 0x%llx\n", b);
                 e = GetRdSeed();
-                d += e - b;
+                d ^= e ^ b;
         }
-        printf("rdseed average : %.3f\n", (double)d / 1000.0);
+        printf("rdseed xor average : %llx \n", d);
 
 
         return 0;
